@@ -3,7 +3,7 @@
   "private": true,
   "version": "3.0.0",
   "type": "module",
-  "description": "A lightweight and secure two-factor authentication (2FA) token manager.",
+  "description": "Zero-knowledge self-hosted vault for 2FA codes and passwords.",
   "scripts": {
     "dev": "vite",
     "server": "cargo run --manifest-path backend/Cargo.toml",
