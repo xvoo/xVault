@@ -1,0 +1,7 @@
+{
+  "SERVER_HOST": "127.0.0.1",
+  "SERVER_PORT": 58951,
+  "SERVER_URL": "https://vault.example.com",
+  "ALLOW_REGISTRATION": false,
+  "TRUST_PROXY": true
+}

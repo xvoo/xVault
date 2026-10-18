@@ -1,0 +1,70 @@
+# xVault — hardened systemd unit
+#
+# Layout:
+#   /opt/xvault/xvault            binary (root:root 0755)
+#   /opt/xvault/dist/             frontend build (root:root)
+#   /etc/xvault/config.json       configuration (root:xvault 0640)
+#   /var/lib/xvault/              database, owned by the service user
+#
+# Install:
+#   sudo useradd --system --home /var/lib/xvault --shell /usr/sbin/nologin xvault
+#   sudo install -d -o xvault -g xvault -m 0700 /var/lib/xvault
+#   sudo cp deploy/xvault.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now xvault
+#
+# Logs: sudo journalctl -u xvault -f
+# Audit the sandbox: systemd-analyze security xvault
+
+[Unit]
+Description=xVault zero-knowledge 2FA & password vault
+After=network-online.target
+Wants=network-online.target
+# If the backend only listens on a WireGuard address, uncomment:
+# After=wg-quick@wg0.service
+# Requires=wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=xvault
+Group=xvault
+WorkingDirectory=/var/lib/xvault
+Environment=XVAULT_CONFIG_PATH=/etc/xvault/config.json
+Environment=XVAULT_DB_PATH=/var/lib/xvault/xVault.sqlite
+Environment=XVAULT_DIST_DIR=/opt/xvault/dist
+ExecStart=/opt/xvault/xvault
+Restart=on-failure
+RestartSec=5
+
+# --- Sandbox ---------------------------------------------------------------
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/xvault
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateUsers=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

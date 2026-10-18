@@ -1,0 +1,31 @@
+services:
+  xvault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xVault
+    ports:
+      - "127.0.0.1:58951:58951"
+    volumes:
+      - xvault_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=58951
+      - SERVER_URL=https://vault.example.com
+      - ALLOW_REGISTRATION=false
+      - TRUST_PROXY=true
+      - XVAULT_DB_PATH=/app/data/xVault.sqlite
+    restart: unless-stopped
+
+volumes:
+  xvault_data:
+    driver: local

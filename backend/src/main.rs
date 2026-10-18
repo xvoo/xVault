@@ -1,0 +1,101 @@
+mod config;
+mod crypto;
+mod db;
+mod handlers;
+mod session;
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use tokio::net::TcpListener;
+
+#[tokio::main]
+async fn main() {
+    let config_path = std::env::var("XVAULT_CONFIG_PATH").unwrap_or_else(|_| "./config.json".into());
+    // Fail closed: a broken configuration must never start the server with
+    // defaults (e.g. silently re-opening registration).
+    let config = match config::load_config(&config_path) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Invalid configuration: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    let db_path = config::resolve_db_path();
+
+    let database = match db::Database::open(&db_path) {
+        Ok(database) => database,
+        Err(err) => {
+            eprintln!("Failed to open database: {err}");
+            std::process::exit(1);
+        }
+    };
+    println!("Database initialized at {}", db_path.display());
+
+    let dist_dir = config::resolve_dist_dir();
+    if !dist_dir.join("index.html").is_file() {
+        eprintln!(
+            "Warning: no frontend build found at {} (run `npm run build` first)",
+            dist_dir.display()
+        );
+    }
+
+    let state = Arc::new(handlers::AppState {
+        config: Arc::new(config.clone()),
+        db: Arc::new(database),
+        sessions: Arc::new(session::SessionStore::default()),
+        limiter: Arc::new(session::RateLimiter::default()),
+        dist_dir,
+    });
+
+    let dist_display = state.dist_dir.display().to_string();
+
+    // Periodic cleanup of expired sessions and rate-limiter entries.
+    {
+        let sessions = state.sessions.clone();
+        let limiter = state.limiter.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
+            loop {
+                interval.tick().await;
+                sessions.cleanup();
+                limiter.cleanup();
+            }
+        });
+    }
+
+    let app = handlers::build_router(state);
+    let address = format!("{}:{}", config.server_host, config.server_port);
+
+    let listener = match TcpListener::bind(&address).await {
+        Ok(listener) => listener,
+        Err(err) => {
+            eprintln!("Failed to bind {address}: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    match listener.local_addr() {
+        Ok(addr) => println!("xVault backend listening on http://{addr}"),
+        Err(_) => println!("xVault backend listening on http://{address}"),
+    }
+    println!("Public URL: {}", config.server_url);
+    println!("Serving static assets from {dist_display}");
+    println!(
+        "Registration is {}",
+        match (config.allow_registration, config.registration_code.is_some()) {
+            (false, _) => "disabled",
+            (true, true) => "enabled (invitation code required)",
+            (true, false) => "enabled (open to anyone)",
+        }
+    );
+    if config.trust_proxy {
+        println!("Trusting X-Forwarded-For from the reverse proxy");
+    }
+
+    if let Err(err) = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await {
+        eprintln!("Server error: {err}");
+        std::process::exit(1);
+    }
+}
